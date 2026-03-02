@@ -214,14 +214,23 @@ def map_incoming_to_upstream(path: str) -> str:
     """
     Map incoming path -> native Gemini upstream URL.
     Strip leading 'v1/' or 'v1beta/' if present to avoid duplication.
+    Also handles OpenAI chat completions path mapping.
     """
     p = path.lstrip("/")
+    
+    # Map OpenAI chat/completions to Gemini generateContent
+    if "chat/completions" in p:
+        # We need a model name, let's assume gemini-1.5-flash if not specified in path
+        # But usually, it's better to extract from body. For now, just map to a default
+        return f"{UPSTREAM_BASE_GEMINI}/models/gemini-1.5-flash:generateContent"
+
     if p.startswith("v1/"):
         p = p[len("v1/"):]
     elif p.startswith("v1beta/"):
         p = p[len("v1beta/"):]
+    
     # avoid trailing slash duplication
-    if p == "":
+    if p == "" or p == "v1":
         return UPSTREAM_BASE_GEMINI.rstrip("/")
     return UPSTREAM_BASE_GEMINI.rstrip("/") + "/" + p
 

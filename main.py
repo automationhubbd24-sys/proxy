@@ -212,24 +212,23 @@ POOL = KeyPool(KEYS_LIST)
 # -------------------------
 def map_incoming_to_upstream(path: str) -> str:
     """
-    Map incoming path -> native Gemini upstream URL.
-    Strip leading 'v1/' or 'v1beta/' if present to avoid duplication.
-    Also handles OpenAI chat completions path mapping.
+    Map incoming path -> native Gemini upstream URL or OpenAI-compatible URL.
     """
     p = path.lstrip("/")
     
-    # Map OpenAI chat/completions to Gemini generateContent
-    if "chat/completions" in p:
-        # We need a model name, let's assume gemini-1.5-flash if not specified in path
-        # But usually, it's better to extract from body. For now, just map to a default
-        return f"{UPSTREAM_BASE_GEMINI}/models/gemini-1.5-flash:generateContent"
+    # Check if it's an OpenAI-style request
+    if p.startswith("v1/chat/completions") or p.startswith("v1/models") or "chat/completions" in p or "models" in p:
+        if p.startswith("v1/"):
+            p = p[len("v1/"):]
+        # Use Google's OpenAI-compatible endpoint
+        return UPSTREAM_BASE_GEMINI.rstrip("/") + "/openai/v1/" + p
 
+    # Original Gemini native logic
     if p.startswith("v1/"):
         p = p[len("v1/"):]
     elif p.startswith("v1beta/"):
         p = p[len("v1beta/"):]
     
-    # avoid trailing slash duplication
     if p == "" or p == "v1":
         return UPSTREAM_BASE_GEMINI.rstrip("/")
     return UPSTREAM_BASE_GEMINI.rstrip("/") + "/" + p
@@ -253,18 +252,23 @@ def detect_stream_from_request(content_bytes: Optional[bytes], query_params: Dic
     return False
 
 
-def prepare_auth_for_key(incoming_headers: Dict[str, str], incoming_params: Dict[str, Any], key_state: KeyState):
+def prepare_auth_for_key(incoming_headers: Dict[str, str], incoming_params: Dict[str, Any], key_state: KeyState, is_openai: bool = False):
     """
     Return (headers_copy, params_copy) where authentication for key_state.key is applied.
-    - If key looks like API key (starts with 'AIza'), put it as params['key'].
+    - If is_openai is True, always use Authorization: Bearer <key>.
+    - If key looks like API key (starts with 'AIza') and not is_openai, put it as params['key'].
     - Otherwise set Authorization: Bearer <key>.
     """
     headers = dict(incoming_headers)
     params = dict(incoming_params) if incoming_params is not None else {}
 
     k = key_state.key.strip()
-    # heuristic: Google API keys usually start with "AIza"
-    if k.startswith("AIza"):
+    
+    if is_openai:
+        # OpenAI-compatible endpoint expects Authorization: Bearer <key>
+        headers['Authorization'] = f"Bearer {k}"
+        auth_mode = "bearer_header(openai)"
+    elif k.startswith("AIza"):
         # use query parameter 'key' for API key (do not set Authorization)
         params['key'] = k
         if 'authorization' in {x.lower() for x in headers.keys()}:
@@ -275,6 +279,7 @@ def prepare_auth_for_key(incoming_headers: Dict[str, str], incoming_params: Dict
         # assume OAuth access token / service account token etc.
         headers['Authorization'] = f"Bearer {k}"
         auth_mode = "bearer_header"
+    
     if DEBUG:
         print(f"[DEBUG] auth mode {auth_mode} for key preview {k[:12]}...")
     return headers, params
@@ -305,7 +310,9 @@ async def catch_all(request: Request, full_path: str):
 
     is_stream = detect_stream_from_request(content if content else None, params)
 
-    if is_stream and ":generateContent" in upstream_url:
+    # Gemini native streaming vs OpenAI streaming
+    is_openai_path = "/openai/" in upstream_url
+    if is_stream and not is_openai_path and ":generateContent" in upstream_url:
         upstream_url = upstream_url.replace(":generateContent", ":streamGenerateContent")
         if 'stream' in params:
             del params['stream']
@@ -318,7 +325,7 @@ async def catch_all(request: Request, full_path: str):
                 key_state = await POOL.next_available()
                 if not key_state: break
                 tried_keys.append(key_state.key[:12] + "...")
-                headers_auth, params_auth = prepare_auth_for_key(incoming_headers, params, key_state)
+                headers_auth, params_auth = prepare_auth_for_key(incoming_headers, params, key_state, is_openai=is_openai_path)
                 if not any(k.lower() == "content-type" for k in headers_auth.keys()):
                     headers_auth["Content-Type"] = request.headers.get("content-type", "application/json")
 
@@ -389,7 +396,7 @@ async def catch_all(request: Request, full_path: str):
             key_state = await POOL.next_available()
             if not key_state: break
             tried.append(key_state.key[:12] + "...")
-            headers_auth, params_auth = prepare_auth_for_key(incoming_headers, params, key_state)
+            headers_auth, params_auth = prepare_auth_for_key(incoming_headers, params, key_state, is_openai=is_openai_path)
             if not any(k.lower() == "content-type" for k in headers_auth.keys()):
                 headers_auth["Content-Type"] = request.headers.get("content-type", "application/json")
 

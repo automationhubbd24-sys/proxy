@@ -141,6 +141,9 @@ def get_all_keys() -> List[str]:
     all_keys = list(set(file_keys + supabase_keys)) # Deduplicate
     if not all_keys:
         raise RuntimeError("No API keys found in file or Supabase.")
+    log.info(f"Total keys loaded: {len(all_keys)} (File: {len(file_keys)}, Supabase: {len(supabase_keys)})")
+    for i, k in enumerate(all_keys):
+        log.info(f"Key {i+1}: {k[:10]}...")
     return all_keys
 
 KEYS_LIST = get_all_keys()
@@ -417,7 +420,7 @@ async def catch_all(request: Request, full_path: str):
                 # It's an error, mark failure
                 key_state.mark_failure()
                 error_body_str = resp.text
-                if DEBUG: print(f"[DEBUG] Key {key_state.key[:12]}... failed with status {resp.status_code}, body: {error_body_str[:200]}")
+                log.error(f"Key {key_state.key[:12]}... failed with status {resp.status_code}, body: {error_body_str}")
 
                 # Also treat 400 as retryable for cases like invalid API keys
                 if resp.status_code in (400, 429, 500, 502, 503):

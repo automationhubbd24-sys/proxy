@@ -463,6 +463,31 @@ async def status(x_proxy_admin: Optional[str] = Header(None)):
     return JSONResponse({"keys": POOL.status()})
 
 
+@APP.get("/list-keys")
+async def list_keys():
+    """
+    Public endpoint to verify keys without exposing full sensitive data.
+    """
+    out = []
+    now = time.monotonic()
+    for s in POOL.states:
+        k = s.key.strip()
+        # Show first 10 and last 5 chars for identification
+        masked = f"{k[:10]}...{k[-5:]}" if len(k) > 15 else k
+        out.append({
+            "key_preview": masked,
+            "is_available": s.is_available(),
+            "available_in": max(0, round(s.banned_until - now, 2)),
+            "success_count": s.success,
+            "fail_count": s.fail,
+        })
+    return JSONResponse({
+        "total_keys": len(out),
+        "active_keys": len([x for x in out if x["is_available"]]),
+        "keys": out
+    })
+
+
 @APP.post("/reload-keys")
 async def reload_keys(x_proxy_admin: Optional[str] = Header(None)):
     if not is_admin(x_proxy_admin):

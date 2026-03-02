@@ -79,7 +79,10 @@ def load_keys_from_file(path: str) -> List[str]:
 
 def load_keys_from_supabase() -> List[str]:
     if not SUPABASE_URL or not SUPABASE_KEY:
-        log.warning("Supabase credentials not configured.")
+        missing = []
+        if not SUPABASE_URL: missing.append("SUPABASE_URL")
+        if not SUPABASE_KEY: missing.append("SUPABASE_KEY")
+        log.warning(f"Supabase credentials not configured. Missing: {', '.join(missing)}")
         return []
     
     try:

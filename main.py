@@ -276,6 +276,14 @@ def prepare_auth_for_key(incoming_headers: Dict[str, str], incoming_params: Dict
 # -------------------------
 @APP.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 async def catch_all(request: Request, full_path: str):
+    # Handle connection test from n8n/OpenAI clients
+    p = full_path.lstrip("/")
+    if p in ("v1", "v1/models", "models"):
+        return JSONResponse({
+            "object": "list",
+            "data": [{"id": "gemini-1.5-flash", "object": "model", "owned_by": "google"}]
+        })
+
     upstream_url = map_incoming_to_upstream(full_path)
     content = await request.body()
     params = dict(request.query_params)

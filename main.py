@@ -448,5 +448,9 @@ async def reload_keys(x_proxy_admin: Optional[str] = Header(None)):
 
 # -------------------------
 # Run note:
-# uvicorn main:APP --host 127.0.0.1 --port 8000
+# uvicorn main:APP --host 0.0.0.0 --port 3000
 # -------------------------
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 3000))
+    uvicorn.run(APP, host="0.0.0.0", port=port)

@@ -1,0 +1,12 @@
+{
+  "folders": [
+    {
+      "name": "gemini-api-key-rotator-proxy-server-main",
+      "path": "."
+    },
+    {
+      "name": "salesmanai-feature-latency-optimization-v1",
+      "path": "./salesmanai-feature-latency-optimization-v1"
+    }
+  ]
+}
